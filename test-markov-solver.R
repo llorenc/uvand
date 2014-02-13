@@ -89,3 +89,11 @@ uc.s <- uc.mat$solve.uc(method='vand', unif=TRUE, j=j, i=i,
 t <- time.log.scale(dec=c(-6,7), num=50)
 uc.s$plot(t, logy=TRUE, logx=TRUE)
 
+## Option choose.samples=TRUE may help the method to converge
+uc.mat <- UCmatrix(Q=build.ctmc.m.m.1.N.matrix.sparse(N, lambda, mu))
+
+uc.s <- uc.mat$solve.uc(method='vand', unif=TRUE, j=j, i=i,
+                        ei.max.mult=ei.max.mult, choose.samples=TRUE)
+
+t <- time.log.scale(dec=c(-6,7), num=50)
+uc.s$plot(t, logy=TRUE, logx=TRUE)

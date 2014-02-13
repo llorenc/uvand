@@ -291,7 +291,7 @@ setMethodS3("compute.b.powers", "UCmatrix", appendVarArgs=FALSE, priv=TRUE, func
     }
   } else {
     r <- i %*% this$Q
-    b <- matrix(nc=length(n.j), nr=nr)
+    b <- matrix(nc=length(n.j), nr=length(powers)+1)
     b[1,n.j] <- i[j]
   }
   curr.power <- 1

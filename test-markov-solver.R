@@ -37,7 +37,8 @@ build.ctmc.m.m.1.N.matrix.sparse <- function(N, lambda, mu) {
 ##
 ## M/M/M/1/N 
 ##
-lambda <- 0.5
+## Example where the chain converges very fast to stationary regime. The method is very accurate.
+lambda <- 1e-3
 mu <- 1
 rho <- lambda/mu
 N <- 500
@@ -47,18 +48,11 @@ ei.max.mult <- 5    # maximum multiplicity of the eigenvalues (0 for unlimited)
 
 Q <- build.ctmc.m.m.1.N.matrix.sparse(N, lambda, mu)
 uc.mat <- UCmatrix(Q)
-
 uc.s <- uc.mat$solve.uc(method='vand', unif=TRUE, j=j, i=i,
                         ei.max.mult=ei.max.mult)
 
 t <- time.log.scale(dec=c(-6,7), num=50)
 uc.s$plot(t, logy=TRUE, logx=TRUE)
-
-## Comparison with the R exponential matrix function, expm
-tt <- 1 # sample t value
-uc.s$prob(tt) # probabilities obtained with the closed form computed by the method.
-
-expm(Q*tt)[i,j] # probabilities obtained with the R exponential matrix function, expm.
 
 # Some UCs information
 uc.s
@@ -75,8 +69,86 @@ uc.s$ei$confl
 # Multiplicity of confluent eigenvalues
 uc.s$ei$mult
 
+## Comparison with the R exponential matrix function, expm
+tt <- 1 # sample t value
+p.uvand <- uc.s$prob(tt) # probabilities obtained with the closed form computed by the method.
+p.expm <- expm(Q*tt)[i,j] # probabilities obtained with the R exponential matrix function, expm.
+p.uvand 
+p.expm
+message("error: ", sum((p.uvand-p.expm)^2))
+
+## Comparison with the R exponential matrix function, expm
+tt <- 10 * N * uc.s$qn # sample t value
+p.uvand <- uc.s$prob(tt) # probabilities obtained with the closed form computed by the method.
+p.expm <- expm(Q*tt)[i,j] # probabilities obtained with the R exponential matrix function, expm.
+p.uvand 
+p.expm
+message("error: ", sum((p.uvand-p.expm)^2))
+
+##
+## M/M/M/1/N 
+##
+## Example where the chain does not converge very fast to stationary regime.
+lambda <- 0.5
+mu <- 1
+rho <- lambda/mu
+N <- 500
+i <- 1 # initial state. Can be also a probability vector, e.g. i <- rep(1/(N+1), N+1)
+j <- 1:min(N+1, 9)  # target states
+ei.max.mult <- 5    # maximum multiplicity of the eigenvalues (0 for unlimited)
+
+Q <- build.ctmc.m.m.1.N.matrix.sparse(N, lambda, mu)
+uc.mat <- UCmatrix(Q)
+uc.s <- uc.mat$solve.uc(method='vand', unif=TRUE, j=j, i=i,
+                        ei.max.mult=ei.max.mult)
+
+t <- time.log.scale(dec=c(-6,7), num=50)
+uc.s$plot(t, logy=TRUE, logx=TRUE)
+
+## Comparison with the R exponential matrix function, expm
+tt <- 1 # sample t value
+p.uvand <- uc.s$prob(tt) # probabilities obtained with the closed form computed by the method.
+p.expm <- expm(Q*tt)[i,j] # probabilities obtained with the R exponential matrix function, expm.
+p.uvand 
+p.expm
+message("error: ", sum((p.uvand-p.expm)^2))
+
+## Comparison with the R exponential matrix function, expm
+tt <- 10 * N * uc.s$qn # sample t value
+p.uvand <- uc.s$prob(tt) # probabilities obtained with the closed form computed by the method.
+p.expm <- expm(Q*tt)[i,j] # probabilities obtained with the R exponential matrix function, expm.
+p.uvand 
+p.expm
+message("error: ", sum((p.uvand-p.expm)^2))
+
+## The error in stationary regime can be reduced adding the option
+## use.lim=TRUE. In this case, the script solves the stationary
+## solution, and it is added to the system that computes the UCs.
+uc.mat <- UCmatrix(Q)
+uc.s <- uc.mat$solve.uc(method='vand', unif=TRUE, j=j, i=i,
+                        ei.max.mult=ei.max.mult, use.lim=TRUE)
+
+t <- time.log.scale(dec=c(-6,7), num=50)
+uc.s$plot(t, logy=TRUE, logx=TRUE)
+
+## Comparison with the R exponential matrix function, expm
+tt <- 1 # sample t value
+p.uvand <- uc.s$prob(tt) # probabilities obtained with the closed form computed by the method.
+p.expm <- expm(Q*tt)[i,j] # probabilities obtained with the R exponential matrix function, expm.
+p.uvand 
+p.expm
+message("error: ", sum((p.uvand-p.expm)^2))
+
+## Comparison with the R exponential matrix function, expm
+tt <- 10 * N * uc.s$qn # sample t value
+p.uvand <- uc.s$prob(tt) # probabilities obtained with the closed form computed by the method.
+p.expm <- expm(Q*tt)[i,j] # probabilities obtained with the R exponential matrix function, expm.
+p.uvand 
+p.expm
+message("error: ", sum((p.uvand-p.expm)^2))
+
 ## For lambda=1 the method diverges for N > around 40
-## M/M/M/1/N where the method diverge
+## M/M/M/1/N where the method diverge (for large values of t)
 ##
 lambda <- 1
 mu <- 1  # For mu=1 the method diverges for N > around 40
@@ -86,7 +158,8 @@ i <- 1 # initial state
 j <- 1:min(N+1, 9)  # target states
 ei.max.mult <- 5    # maximum multiplicity of the eigenvalues (0 for unlimited)
 
-uc.mat <- UCmatrix(Q=build.ctmc.m.m.1.N.matrix.sparse(N, lambda, mu))
+Q <- build.ctmc.m.m.1.N.matrix.sparse(N, lambda, mu)
+uc.mat <- UCmatrix(Q)
 
 uc.s <- uc.mat$solve.uc(method='vand', unif=TRUE, j=j, i=i,
                         ei.max.mult=ei.max.mult)
@@ -94,11 +167,43 @@ uc.s <- uc.mat$solve.uc(method='vand', unif=TRUE, j=j, i=i,
 t <- time.log.scale(dec=c(-6,7), num=50)
 uc.s$plot(t, logy=TRUE, logx=TRUE)
 
-## Option choose.samples=TRUE may help the method to converge
-uc.mat <- UCmatrix(Q=build.ctmc.m.m.1.N.matrix.sparse(N, lambda, mu))
+## Comparison with the R exponential matrix function, expm
+tt <- 1 # sample t value
+p.uvand <- uc.s$prob(tt) # probabilities obtained with the closed form computed by the method.
+p.expm <- expm(Q*tt)[i,j] # probabilities obtained with the R exponential matrix function, expm.
+p.uvand 
+p.expm
+message("error: ", sum((p.uvand-p.expm)^2))
 
+## Comparison with the R exponential matrix function, expm
+tt <- 10 * N * uc.s$qn # sample t value
+p.uvand <- uc.s$prob(tt) # probabilities obtained with the closed form computed by the method.
+p.expm <- expm(Q*tt)[i,j] # probabilities obtained with the R exponential matrix function, expm.
+p.uvand 
+p.expm
+message("error: ", sum((p.uvand-p.expm)^2))
+
+## Option choose.samples=TRUE may help the method to converge. See section 7 in the report
+## http://www.ac.upc.edu/RR/2010/53.pdf
+uc.mat <- UCmatrix(Q)
 uc.s <- uc.mat$solve.uc(method='vand', unif=TRUE, j=j, i=i,
                         ei.max.mult=ei.max.mult, choose.samples=TRUE)
 
 t <- time.log.scale(dec=c(-6,7), num=50)
 uc.s$plot(t, logy=TRUE, logx=TRUE)
+
+## Comparison with the R exponential matrix function, expm
+tt <- 1 # sample t value
+p.uvand <- uc.s$prob(tt) # probabilities obtained with the closed form computed by the method.
+p.expm <- expm(Q*tt)[i,j] # probabilities obtained with the R exponential matrix function, expm.
+p.uvand 
+p.expm
+message("error: ", sum((p.uvand-p.expm)^2))
+
+## Comparison with the R exponential matrix function, expm
+tt <- 10 * N * uc.s$qn # sample t value
+p.uvand <- uc.s$prob(tt) # probabilities obtained with the closed form computed by the method.
+p.expm <- expm(Q*tt)[i,j] # probabilities obtained with the R exponential matrix function, expm.
+p.uvand 
+p.expm
+message("error: ", sum((p.uvand-p.expm)^2))

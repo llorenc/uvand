@@ -184,7 +184,7 @@ setMethodS3("solve.uc.vand", "UCmatrix", appendVarArgs=FALSE, priv=TRUE, functio
       ## compute the eigenvalues of the uniformized matrix
       uc$ei$toggle.Q.P.map(uc$qn)
     }
-    t.c <- uc$time.constant(alpha=0.5)
+    t.c <- uc$time.constant(alpha=1)
     if(t.c > dim(this$Q)[1]) {
       if(!uc$choose.samples) {
         add.w <- "  Try the option choose.samples=TRUE\n" ;

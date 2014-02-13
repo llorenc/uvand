@@ -45,15 +45,20 @@ i <- 1 # initial state. Can be also a probability vector, e.g. i <- rep(1/(N+1),
 j <- 1:min(N+1, 9)  # target states
 ei.max.mult <- 5    # maximum multiplicity of the eigenvalues (0 for unlimited)
 
-uc.mat <- UCmatrix(Q=build.ctmc.m.m.1.N.matrix.sparse(N, lambda, mu))
+Q <- build.ctmc.m.m.1.N.matrix.sparse(N, lambda, mu)
+uc.mat <- UCmatrix(Q)
 
 uc.s <- uc.mat$solve.uc(method='vand', unif=TRUE, j=j, i=i,
-#                        use.lim=T,
-#                        choose.samples=T,
                         ei.max.mult=ei.max.mult)
 
 t <- time.log.scale(dec=c(-6,7), num=50)
 uc.s$plot(t, logy=TRUE, logx=TRUE)
+
+## Comparison with the R exponential matrix function, expm
+tt <- 1 # sample t value
+uc.s$prob(tt) # probabilities obtained with the closed form computed by the method.
+
+expm(Q*tt)[i,j] # probabilities obtained with the R exponential matrix function, expm.
 
 # Some UCs information
 uc.s

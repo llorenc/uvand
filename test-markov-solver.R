@@ -42,7 +42,7 @@ lambda <- 1e-3
 mu <- 1
 rho <- lambda/mu
 N <- 500
-i <- 1 # initial state. Can be also a probability vector, e.g.
+i <- 1 # initial state.
 j <- 1:min(N+1, 9)  # target states
 ei.max.mult <- 5    # maximum multiplicity of the eigenvalues (0 for unlimited)
 
@@ -94,7 +94,7 @@ mu <- 1
 rho <- lambda/mu
 N <- 500
 i <- 1 
-i <- c(rep(1/5, 5), rep(0, N+1-5))
+i <- c(rep(1/5, 5), rep(0, N+1-5)) # initial state as a probability vector
 j <- 1:min(N+1, 9)  # target states
 ei.max.mult <- 5    # maximum multiplicity of the eigenvalues (0 for unlimited)
 

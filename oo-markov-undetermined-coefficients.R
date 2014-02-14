@@ -28,7 +28,7 @@ setConstructorS3("UCmatrix", function(Q=NULL, qii.max=NULL) {
   if(!is.null(Q)) {
     call.gc("UCmatrix", "constructor")
     stopifnot(inherits(Q, "Matrix"))
-    states <- dim(Q)[1]
+    states <- nrow(Q)
     type <- guess.Q.type(Q)
   } else {
     states <- NULL
@@ -67,7 +67,7 @@ setMethodS3("solve.uc", "UCmatrix", appendVarArgs=FALSE, function(this,
     if (!open(matlab))
       throw("Matlab server is not running: waited 30 seconds.")
   }
-  j <- choose.j(j, dim(this$Q)[1])
+  j <- choose.j(j, nrow(this$Q))
   if(!is.null(lim.dist)) use.lim <- TRUE
   if(unif) {
     if(this$type == 'P') {
@@ -185,7 +185,7 @@ setMethodS3("solve.uc.vand", "UCmatrix", appendVarArgs=FALSE, priv=TRUE, functio
       uc$ei$toggle.Q.P.map(uc$qn)
     }
     t.c <- uc$time.constant(alpha=1)
-    if(t.c > dim(this$Q)[1]) {
+    if(t.c > nrow(this$Q)) {
       if(!uc$choose.samples) {
         add.w <- "  Try the option choose.samples=TRUE\n" ;
       } else {
@@ -193,9 +193,9 @@ setMethodS3("solve.uc.vand", "UCmatrix", appendVarArgs=FALSE, priv=TRUE, functio
       }
       warning(paste(sep='',
                     sprintf("Transient time in slots (%6.1e) larger than nuber of states (%6.1e)\n" ,
-                            t.c, dim(this$Q)[1]),
+                            t.c, nrow(this$Q)),
                     sprintf("  The solution can be innacurate for t > %6.2e\n" ,
-                            dim(this$Q)[1]/uc$qn),
+                            nrow(this$Q)/uc$qn),
                     add.w
                     ))
     }
@@ -214,7 +214,7 @@ setMethodS3("solve.uc.vand", "UCmatrix", appendVarArgs=FALSE, priv=TRUE, functio
         if(uc$ei$type == 'Q') {
           b[1,] <- b[1,] - lim
         } else {
-          b <- b - matrix(rep(lim, dim(b)[1]), nr=dim(b)[1], byr=TRUE)
+          b <- b - matrix(rep(lim, nrow(b)), nr=nrow(b), byr=TRUE)
         }
       }
     })
@@ -319,7 +319,7 @@ setMethodS3("absorbing.prob", "UCmatrix", appendVarArgs=FALSE, priv=TRUE, functi
   stopifnot(absorbing > 0)
   ## Assume absorbing states and Q in canonical form (absorbing states have
   ## the highest indexes)
-  states <- dim(this$Q)[1]
+  states <- nrow(this$Q)
   trans <- states -  absorbing
   if(i > trans) stop('State is not transient:', i, '\n')
   if(absorbing == 1) {
@@ -338,7 +338,7 @@ setMethodS3("absorbing.prob", "UCmatrix", appendVarArgs=FALSE, priv=TRUE, functi
 setMethodS3("stationary.prob", "UCmatrix", appendVarArgs=FALSE, priv=TRUE, function(this) {
   ## Remove the first equation and normalize
   msg(class=class(this)[1], "stationary.prob", "Compute the stationary dist.")
-  n <- dim(this$Q)[1]
+  n <- nrow(this$Q)
   stat <-
     switch(this$type,
            Q = try.solve(t(this$Q[2:n,2:n]), -as.matrix(this$Q[1,2:n])),
@@ -510,10 +510,10 @@ solve.vandermonde.bp <- function(alpha, b) {
 
 guess.Q.type <- function(Q) {
   stopifnot(!is.null(Q))
-  if(isTRUE(all.equal(apply(Q,1,sum), rep(0,dim(Q)[1])))) {
+  if(isTRUE(all.equal(apply(Q,1,sum), rep(0,nrow(Q))))) {
     ## Is an infinitesimal generator
     type <- 'Q'
-  } else if(isTRUE(all.equal(apply(Q,1,sum), rep(1,dim(Q)[1])))) {
+  } else if(isTRUE(all.equal(apply(Q,1,sum), rep(1,nrow(Q))))) {
     ## Is a stochastic matrix
     type <- 'P'
   } else {

@@ -110,7 +110,7 @@ setMethodS3("read.uc.from.matlab.file", "UC", appendVarArgs=FALSE, function(this
 ##
 ## Evaluate pn(t)
 setMethodS3("prob", "UC", appendVarArgs=FALSE, function(this, t) {
-  nc <- dim(this$coef)[2]
+  nc <- ncol(this$coef)
   if(is.null(this$coef)) {
     prob <- data.frame()
     warning("empty coefficients, ", this$title())
@@ -183,7 +183,7 @@ setMethodS3("print", "UC", appendVarArgs=FALSE, function(this, t) {
 setMethodS3("solve.uc.eigenvectors", "UC", appendVarArgs=FALSE, priv=TRUE, function(this) {
   msg(class=class(this)[1], "solve.uc.eigenvectors",'Solving the eigenvectors')
   if(length(this$i) == 1) {
-    x0 <- rep(0,len=dim(this$ei$evec)[1]) ; x0[this$i] <- 1
+    x0 <- rep(0,len=nrow(this$ei$evec)) ; x0[this$i] <- 1
   } else {
     x0 <- this$i
   }
@@ -284,13 +284,13 @@ setMethodS3("solve.uc.vandermonde", "UC", appendVarArgs=FALSE, priv=TRUE, functi
     msg(class=class(this)[1], "solve.uc.vandermonde",'remove the limit eigenv equation')
     tmp <- this$ei$one[1]
     this$ei$one <- this$ei$one[-1]
-    V <- this$confl.vand.mat(dim(b)[1], powers)
+    V <- this$confl.vand.mat(nrow(b), powers)
     this$ei$one <- c(tmp, this$ei$one)
   } else {
-    V <- this$confl.vand.mat(dim(b)[1], powers)
+    V <- this$confl.vand.mat(nrow(b), powers)
     if(!is.null(lim)) {
       msg(class=class(this)[1], "solve.uc.vandermonde",'add the limit distribution')
-      V <- rbind(V, c(1, rep(0, dim(V)[2]-1)))
+      V <- rbind(V, c(1, rep(0, ncol(V)-1)))
       b <- rbind(b, lim)
     }
   }
@@ -302,8 +302,8 @@ setMethodS3("solve.uc.vandermonde", "UC", appendVarArgs=FALSE, priv=TRUE, functi
     ## setVariable(matlab, i=nz[,1])
     ## setVariable(matlab, j=nz[,2])
     ## setVariable(matlab, s=V[nz])
-    ## setVariable(matlab, m=dim(V)[1])
-    ## setVariable(matlab, n=dim(V)[2])
+    ## setVariable(matlab, m=nrow(V))
+    ## setVariable(matlab, n=ncol(V))
     ## setVariable(matlab, nzmax=length(nz))
     setVariable(matlab, b=b)
     setVariable(matlab, V=V)
@@ -465,17 +465,17 @@ setMethodS3("get.states.names", "UC", appendVarArgs=FALSE, function(this) {
 setMethodS3("p.ctmc", "UC", appendVarArgs=FALSE, private=TRUE, function(this, t) {
   single <- length(this$ei$one) # number of single eigenvalues
   mult <- length(this$ei$confl) # number of non single eigenvalues
-  p <- sapply(1:dim(this$coef)[2], function(j) {
-    sapply(t, function(t) sum(this$coef[1:single,j] * exp(t * this$ei$one)))
+  p <- sapply(1:ncol(this$coef), function(j) {
+    sapply(t, function(tt) sum(this$coef[1:single,j] * exp(tt * this$ei$one)))
   })
   if(mult > 0) { # evaluate non single eigenvalues
-    p <- p + sapply(1:dim(this$coef)[2], function(j) {
-      sapply(t, function(t) {
+    p <- p + sapply(1:ncol(this$coef), function(j) {
+      sapply(t, function(tt) {
         i <- single+1
         sum(sapply(1:mult, function(n.ei) {
           s <- sum(this$coef[i:(i+this$ei$mult[n.ei]-1),j] *
-              t^c(0:(this$ei$mult[n.ei]-1))) *
-                exp(t * this$ei$confl[n.ei])
+              tt^c(0:(this$ei$mult[n.ei]-1))) *
+                exp(tt * this$ei$confl[n.ei])
           i <<- i + this$ei$mult[n.ei]
           return(s)
         }))
@@ -490,11 +490,11 @@ setMethodS3("p.ctmc", "UC", appendVarArgs=FALSE, private=TRUE, function(this, t)
 setMethodS3("p.dtmc", "UC", appendVarArgs=FALSE, private=TRUE, function(this, t) {
   single <- length(this$ei$one) # number of single eigenvalues
   mult <- length(this$ei$confl) # number of non single eigenvalues
-  p <- sapply(1:dim(this$coef)[2], function(j) {
+  p <- sapply(1:ncol(this$coef), function(j) {
     sapply(t, function(t) sum(this$coef[1:single,j] * this$ei$one^t))
   })
   if(mult > 0) { # evaluate non single eigenvalues
-    p <- p + sapply(1:dim(this$coef)[2], function(j) {
+    p <- p + sapply(1:ncol(this$coef), function(j) {
       sapply(t, function(t) {
         i <- single+1
         sum(sapply(1:mult, function(n.ei) {

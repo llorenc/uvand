@@ -51,7 +51,7 @@ setMethodS3("print", "Eigen", appendVarArgs=FALSE, function(this, ...) {
 setMethodS3("init", "Eigen", appendVarArgs=FALSE, function(this, Q, type, evec=FALSE,
                                ei.max=0, ei.max.mult=0, use.matlab=FALSE) {
   msg(class=class(this)[1], "init", "Compute the eigenvalues")
-  N <- dim(Q)[1]
+  N <- nrow(Q)
   stopifnot(N>0)
   stopifnot((ei.max.mult==0)||(ei.max.mult>1))
   this$tol <- (((1+.Machine$double.eps)^N)-1)^0.5
@@ -80,7 +80,7 @@ setMethodS3("init", "Eigen", appendVarArgs=FALSE, function(this, Q, type, evec=F
   if(this$type == 'Q') {
     ## First eigenvalue must be 0
     this$one <- this$one[length(this$one):1] 
-    if(!is.null(this$evec)) this$evec <- this$evec[,dim(this$evec)[2]:1]
+    if(!is.null(this$evec)) this$evec <- this$evec[,ncol(this$evec):1]
     stopifnot(isTRUE(all.equal(abs(this$one[1]), 0, tol=this$tol)))
     this$one[1] <- 0
     ## Check for absorbing states

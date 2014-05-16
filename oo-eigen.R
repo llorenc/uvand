@@ -324,7 +324,9 @@ setMethodS3("second.smallest.abs", "Eigen", appendVarArgs=FALSE, function(this) 
     list(id=id, value=x[id])
   }
   ##
-  if(length(this$one) > 2) {
+  if(length(this$one) == 2) {
+    min.one <- list(value=abs(this$one[2]), id=2)
+  } else if(length(this$one) > 2) {
     min.one <- find.min.abs(this$one[2:length(this$one)])
     min.one$id <- min.one$id+1
   } else min.one <- NULL
@@ -346,7 +348,9 @@ setMethodS3("second.largest.re", "Eigen", appendVarArgs=F, function(this) {
     list(id=id, value=x[id])
   }
   ##
-  if(length(this$one) > 2) {
+  if(length(this$one) == 2) {
+    max.one = list(value=this$one[2], id=2)
+  } else if(length(this$one) > 2) {
     max.one <- find.max.re(this$one[2:length(this$one)])
     max.one$id <- max.one$id+1
   } else max.one <- NULL

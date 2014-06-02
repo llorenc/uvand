@@ -12,17 +12,40 @@
 ##
 ## Compute confluent eigenvalues
 ##
-setConstructorS3("Eigen", function() {
+setConstructorS3("Eigen", function(ei=NULL) {
+  if(!is.null(ei)) {
+         type <- ei$type
+         one <- ei$one
+         confl <- ei$confl
+         mult <- ei$mult
+         cmult <- ei$cmult
+         evec <- ei$evec
+         lim.mult <- ei$lim.mult
+         absorbing <- ei$absorbing
+         zero.mult <- ei$zero.mult
+         tol <- ei$tol
+  } else {
+         type <- NULL
+         one <- vector('numeric')
+         confl <- vector('numeric')
+         mult <- vector('integer')
+         cmult <- vector('integer')
+         evec <- NULL
+         lim.mult <- integer()
+         absorbing <- integer()
+         zero.mult <- 0
+         tol <- .Machine$double.eps^0.5
+  }
   extend(Object(), "Eigen",
-         type=NULL,               # eigenvalues type: 'Q', 'P'
-         one=vector('numeric'),   # single eigenvalues
-         confl=vector('numeric'), # confluent eigenvalues
-         mult=vector('integer'),  # multiplicity of confluent eigenvalues
-         cmult=vector('integer'), # multplicity before applying ei.max.mult
-         evec=NULL,               # right eigenvectors
-         lim.mult=integer(),      # multiplicity of the limit eigenvalue
-         absorbing=integer(),     # number of absorbing states
-         tol=.Machine$double.eps^0.5 # tolerance in some comparisons
+         type=type,   # eigenvalues type: 'Q', 'P'
+         one=one,     # single eigenvalues
+         confl=confl, # confluent eigenvalues
+         mult=mult,   # multiplicity of confluent eigenvalues
+         cmult=cmult, # multplicity before applying ei.max.mult
+         evec=evec,           # right eigenvectors
+         lim.mult=lim.mult,   # multiplicity of the limit eigenvalue
+         absorbing=absorbing, # number of absorbing states
+         tol=tol      # tolerance in some comparisons
          );
 })
 
@@ -48,8 +71,8 @@ setMethodS3("print", "Eigen", appendVarArgs=FALSE, function(this, ...) {
 ##
 ## Compute the eigenvalues and its multiplicity
 ##
-setMethodS3("init", "Eigen", appendVarArgs=FALSE, function(this, Q, type, evec=FALSE,
-                               ei.max=0, ei.max.mult=0, use.matlab=FALSE) {
+setMethodS3("init", "Eigen", appendVarArgs=FALSE, function(this, Q, type,
+                               evec=FALSE, ei.max=0, ei.max.mult=0, use.matlab=FALSE) {
   msg(class=class(this)[1], "init", "Compute the eigenvalues")
   N <- nrow(Q)
   stopifnot(N>0)
@@ -78,16 +101,34 @@ setMethodS3("init", "Eigen", appendVarArgs=FALSE, function(this, Q, type, evec=F
   }
   this$lim.mult <- 1
   if(this$type == 'Q') {
+    if(any(Re(this$one) > 0)) {
+      gtz.idx <- which(Re(this$one) > 0)
+      msg(class=class(this)[1], "init", "Found eigenvalues > 0: ",
+           paste(sep='', Re(this$one[gtz.idx]), collapse=','))
+      max.idx <- which.max(Re(this$one))
+      max.Re <- Re(this$one[max.idx])
+      msg(class=class(this)[1], "init", "Substracting ",
+           paste(sep='', Re(this$one[max.idx]), collapse=','))
+      this$one <- this$one - max.Re
+      this$one[1] <- 0
+      if(this$one[max.idx] == 0) { 
+        this$one[max.idx] <- -max.Re
+      }
+    }
     ## First eigenvalue must be 0
     this$one <- this$one[length(this$one):1] 
     if(!is.null(this$evec)) this$evec <- this$evec[,ncol(this$evec):1]
-    stopifnot(isTRUE(all.equal(abs(this$one[1]), 0, tol=this$tol)))
+    if(!isTRUE(all.equal(abs(this$one[1]), 0, tol=this$tol))) {
+      warning('Dominant eigenvalue is not 0:', this$one[1])
+    }
     this$one[1] <- 0
     ## Check for absorbing states
     abs.s <- which(sapply(1:N, function(i) all(Q[i,]==0)))
   } else if(this$type == 'P') {
     ## First eigenvalue must be 1
-    stopifnot(isTRUE(all.equal(abs(this$one[1]), 1, tol=this$tol)))
+    if(!isTRUE(all.equal(abs(this$one[1]), 1, tol=this$tol))) {
+      warning('Dominant eigenvalue is not 1:', this$one[1])
+    }
     this$one[1] <- 1
     ## Check for absorbing states
     abs.s <- which(sapply(1:N, function(i) Q[i,i]==1))
@@ -231,7 +272,10 @@ setMethodS3("compute.mult", "Eigen", appendVarArgs=FALSE, private=TRUE, function
   }
   ## Remove Im part of almost real eigenvalues
   for(i in 2:(length(this$one)-1)) {
-    if((Im(this$one[i]) != 0) && (abs(Im(this$one[i])) < this$tol)) set.real(i)
+    ## if((Re(this$one[i]) != 0) && (Im(this$one[i]) != 0)
+    ##    && (abs(Im(this$one[i])) < this$tol)) set.real(i)
+    if((Re(this$one[i]) < this$tol) && (Im(this$one[i]) < this$tol)
+       && (abs(Im(this$one[i])) < this$tol)) set.real(i)
   }
   ## sort by real part to facilitate finding multiplicities
   this$one <- this$one[order(Re(this$one), decreasing=TRUE)]
@@ -312,7 +356,15 @@ setMethodS3("compute.mult", "Eigen", appendVarArgs=FALSE, private=TRUE, function
     }
     msg(class=class(this)[1], 'compute.mult', ' final number of eigenvalues ', num.of.ei)
   }
-    # browser()
+  if(this$type == 'Q') {
+    if((length(this$confl) > 0) &&
+       (abs(Re(this$confl[1])) < this$tol) && (abs(Im(this$confl[1])) < this$tol)) {
+      msg(class=class(this)[1], "compute.mult", "Removing eigenvalue=0 with mult. ", this$mult[1])
+      this$confl <- this$confl[-1]
+      this$zero.mult <- this$mult[1]
+      this$mult <- this$mult[-1]
+    }
+  }
 })
 
 ##

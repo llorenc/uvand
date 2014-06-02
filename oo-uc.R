@@ -19,23 +19,59 @@ setConstructorS3("UC", function(type=NULL,  method=NULL, states=NULL, j=NULL, i=
                                 states.names=NULL,
                                 unif=FALSE, qii.max=NULL, qn=NULL,
                                 choose.samples=FALSE, lim=FALSE, rm.lim.eq=FALSE,
-                                ei.max=0, ei.max.mult=0, use.matlab=FALSE) {
-  if(!is.null(j) && !is.null(states.names) && (length(states.names) != length(j))) {
-    warning("UC: Incorrect number of states.names")
-    states.names <- NULL
+                                ei.max=0, ei.max.mult=0, use.matlab=FALSE,
+                                uc=NULL, ei=NULL) {
+  if(!is.null(uc)) {
+    method <- uc$method
+    states <- uc$states
+    mc.type <- uc$mc.type
+    matrix.type <- uc$type
+    states.names <- uc$states.names
+    unif <- uc$unif
+    lim <- uc$lim
+    rm.lim.eq <- uc$rm.lim.eq
+    i <- uc$i
+    j <- uc$j
+    qii.max <- uc$qii.max
+    qn <- uc$qn
+    choose.samples <- uc$choose.samples
+    max.power <- uc$max.power
+    ei <- Eigen(ei)
+    ei.max <- uc$ei.max
+    ei.max.mult <- uc$ei.max.mult
+    use.matlab <- uc$use.matlab
+    coef <- uc$coef
+    kappa <- uc$kappa
+    matrix.dim <- uc$matrix.dim
+    matrix.zeros <- uc$matrix.zeros
+    matrix.bytes <- uc$matrix.bytes
+    time <- uc$time
   } else {
-    states.names <- as.character(states.names)
+    max.power <- NULL
+    coef <- NULL
+    ei <- Eigen()
+    coef <- NULL
+    kappa <- NA
+    matrix.dim <- NULL
+    matrix.zeros <- NULL
+    matrix.bytes <- NULL
+    if(!is.null(type)) {
+      mc.type = switch(type,
+        P = 'dtmc',
+        Q = 'ctmc',
+        stop('Unknown type')
+        )
+    } else {
+      mc.type = NULL ;
+    }
+    if(!is.null(j) && !is.null(states.names) && (length(states.names) != length(j))) {
+      warning("UC: Incorrect number of states.names")
+      states.names <- NULL
+    } else {
+      states.names <- as.character(states.names)
+    }
+    if(rm.lim.eq && lim==FALSE) lim <- TRUE
   }
-  if(!is.null(type)) {
-    mc.type = switch(type,
-      P = 'dtmc',
-      Q = 'ctmc',
-      stop('Unknown type')
-      )
-  } else {
-    mc.type = NULL ;
-  }
-  if(rm.lim.eq && lim==FALSE) lim <- TRUE
   ##
   extend(Object(), "UC",
          method=method,          # UC solution method
@@ -51,17 +87,17 @@ setConstructorS3("UC", function(type=NULL,  method=NULL, states=NULL, j=NULL, i=
          qii.max=qii.max,        # max_i |Qii|
          qn=qn,                  # uniformization parameter
          choose.samples=choose.samples, # if TRUE, samples are choosen evely spaced in log scale.
-         max.power=NULL,         # maximum power used in the Vand. system when choose.samples=TRUE
-         ei=Eigen(),             # eigenvalues
+         max.power=max.power,    # maximum power used in the Vand. system when choose.samples=TRUE
+         ei=ei,                  # eigenvalues
          ei.max=ei.max,          # Take the ei.max largest Re eigenvalues (0 for unlimited)
          ei.max.mult=ei.max.mult,# maximum multiplicity of the eigenvalues (0 for unlimited)
          use.matlab=use.matlab,  # TRUE it the eigenvalues are computed with matlab
-         coef=NULL,              # undetermined coefficients (UC)
-         kappa=NA,               # condition number of the matix used to solve the coefs.
-         matrix.dim=NULL,        # matrix dimensions
-         matrix.zeros=NULL,      # Number of matrix elements = 0 in the equations.
-         matrix.bytes=NULL,      # Matrix storage in Mb.
-         time=list()             # computation times
+         coef=coef,              # undetermined coefficients (UC)
+         kappa=kappa,            # condition number of the matix used to solve the coefs.
+         matrix.dim=matrix.dim,  # matrix dimensions
+         matrix.zeros=matrix.zeros, # Number of matrix elements = 0 in the equations.
+         matrix.bytes=matrix.bytes, # Matrix storage in Mb.
+         time=time               # computation times
          );
 })
 
@@ -214,10 +250,12 @@ setMethodS3("compute.qn", "UC", appendVarArgs=FALSE, priv=TRUE, function(this) {
     ## second largest eigenvalue in modulus
     ei2 <- abs(this$ei$second.largest.re()$value)
     N <- this$ei$number()
-    if(this$ei$type == 'P')
+    if(this$ei$type == 'P') {
       min.qn <- (this$qii.max - this$qii.max * ei2)/(1-.Machine$double.eps^(1/N))
-    else
-      min.qn <- ei2/(1-.Machine$double.eps^(1/as.numeric(N)))
+    } else {
+      min.qn <- ei2/(1-.Machine$double.eps^(0.8/as.numeric(N)))
+      ## min.qn <- ei2/(1-.Machine$double.eps^(0.5/as.numeric(N)))
+    }
     this$qn <- max(this$qii.max, abs.min.ei, min.qn)
     if(this$qn > ei2*N) {
       this$qn <- max(this$qii.max, ei2*N)
@@ -474,8 +512,11 @@ setMethodS3("p.ctmc", "UC", appendVarArgs=FALSE, private=TRUE, function(this, t)
         i <- single+1
         sum(sapply(1:mult, function(n.ei) {
           s <- sum(this$coef[i:(i+this$ei$mult[n.ei]-1),j] *
-              tt^c(0:(this$ei$mult[n.ei]-1))) *
-                exp(tt * this$ei$confl[n.ei])
+                   tt^c(0:(this$ei$mult[n.ei]-1))) *
+                     exp(tt * this$ei$confl[n.ei])
+          ## s <- sum(this$coef[i:(i+this$ei$mult[n.ei]-1),j] *
+          ##     exp(c(0:(this$ei$mult[n.ei]-1)) * log(tt) +
+          ##       tt * this$ei$confl[n.ei]))
           i <<- i + this$ei$mult[n.ei]
           return(s)
         }))

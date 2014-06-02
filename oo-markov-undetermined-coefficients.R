@@ -21,45 +21,30 @@ library(R.matlab)
 source("oo-eigen.R")
 source("oo-uc.R")
 
+##########################################################################################
 debug <- TRUE
-##########################################################################################
-## UC Matrix class
-##########################################################################################
-setConstructorS3("UCmatrix", function(Q=NULL, qii.max=NULL) {
-  if(!is.null(Q)) {
-    call.gc("UCmatrix", "constructor")
-    stopifnot(inherits(Q, "Matrix"))
-    states <- nrow(Q)
-    type <- guess.Q.type(Q)
-  } else {
-    states <- NULL
-    type <- NULL
-  }
-  ##
-  extend(Object(), "UCmatrix",
-         Q=Q,             # the matrix
-         type=type,       # matrix type 'Q', 'P'
-         qii.max=qii.max, # max_i |Qii| if the matrix is uniformized
-         states=states    # states of the chain
-         );
-})
-
 matlab <- NULL
-#######################################
-## UC Matrix public methods
-#######################################
-##
-## Solve a CTMC/DTMC
-##
-setMethodS3("solve.uc", "UCmatrix", appendVarArgs=FALSE, function(this,
-                                      j=NULL, i=1, method='vand',
-                                      unif=FALSE, qn=NULL, choose.samples=FALSE,
-                                      lim.dist=NULL, use.lim=FALSE, rm.lim.eq=FALSE,
-                                      states.names=NULL, ei.max=0, ei.max.mult=0,
-                                      use.matlab=FALSE) {
-  msg(class=class(this)[1], "solve.uc", "solving for ", this$type)
+UCmatrix.Q <- Matrix()
+UCmatrix.states <- integer()
+UCmatrix.type <- character()
+UCmatrix.qii.max <- numeric()
+
+solve.uc <- function(Q=NULL, qii.max=NULL, j=NULL, i=1, method='vand',
+                     unif=FALSE, qn=NULL, choose.samples=FALSE,
+                     lim.dist=NULL, use.lim=FALSE, rm.lim.eq=FALSE,
+                     states.names=NULL, ei.max=0, ei.max.mult=0,
+                     use.matlab=FALSE) {
+  if(!is.null(Q)) {
+    UCmatrix.Q <<- Q
+  }
+  stopifnot(!is.null(UCmatrix.Q)) ;
+  UCmatrix.qii.max <<- qii.max
+  UCmatrix.states <<- nrow(UCmatrix.Q)
+  UCmatrix.type <<- guess.Q.type(UCmatrix.Q)
+  msg(class="", "solve.uc", "solving for ", UCmatrix.type)
+  #
   if(use.matlab) {
-    msg(class=class(this)[1], "solve.uc", "using matlab")
+    msg(class="", "solve.uc", "using matlab")
     ## Start the matlab server on the same machine
     Matlab$startServer()
     ## Create a Matlab client
@@ -68,24 +53,24 @@ setMethodS3("solve.uc", "UCmatrix", appendVarArgs=FALSE, function(this,
     if (!open(matlab))
       throw("Matlab server is not running: waited 30 seconds.")
   }
-  j <- choose.j(j, nrow(this$Q))
+  j <- choose.j(j, nrow(UCmatrix.Q))
   if(!is.null(lim.dist)) use.lim <- TRUE
   if(unif) {
-    if(this$type == 'P') {
-      if(is.null(this$qii.max))
+    if(UCmatrix.type == 'P') {
+      if(is.null(UCmatrix.qii.max))
         stop('The matrix seems uniformized and qii.max is unknown')
     } else {
-      if(is.null(this$qii.max)) this$qii.max <- abs(min(diag(this$Q)))
+      if(is.null(UCmatrix.qii.max)) UCmatrix.qii.max <<- abs(min(diag(UCmatrix.Q)))
     }
   }
-  uc <- UC(type=this$type, method=method, states=this$states, j=j, i=i,
-           states.names=states.names, unif=unif, qii.max=this$qii.max, qn=qn, 
+  uc <- UC(type=UCmatrix.type,method=method, states=UCmatrix.states, j=j, i=i,
+           states.names=states.names, unif=unif, qii.max=UCmatrix.qii.max, qn=qn, 
            choose.samples=choose.samples, lim=use.lim, rm.lim.eq=rm.lim.eq,
            ei.max=ei.max, ei.max.mult=ei.max.mult, use.matlab=use.matlab)
   t.tot <-
     switch(method,
-           vand =  system.time(this$solve.uc.vand(uc, lim=lim.dist)),
-           evec = system.time(this$solve.uc.evec(uc)),
+           vand =  system.time(solve.uc.vand(uc, lim=lim.dist)),
+           evec = system.time(solve.uc.evec(uc)),
            stop('Unknown method (must be "vand" or "evec")')
            )
   ##
@@ -93,8 +78,8 @@ setMethodS3("solve.uc", "UCmatrix", appendVarArgs=FALSE, function(this,
   if(!empty(uc$coef) && isTRUE(all(Re(uc$coef) == 0))) uc$coef <- NULL # the system failed
   ##
   if(debug) {
-    msg(class=class(this)[1], "solve.uc", 'done')
-    this$print()
+    msg(class="", "solve.uc", 'done')
+    Q.print()
     uc$print()
   }
   if(use.matlab) {
@@ -102,52 +87,51 @@ setMethodS3("solve.uc", "UCmatrix", appendVarArgs=FALSE, function(this,
     close(matlab)
   }
   return(uc)
-})
+}
 
-setMethodS3("print", "UCmatrix", function(this) {
+Q.print <- function() {
   if(debug) cat('---------------\n')
-  msg("", "UCmatrix", "summary")
-  msg("", " Matrix type", this$type)
-  msg("", " Number of states", this$states)
-})
+  msg("", "Matrix", "summary")
+  msg("", " type", UCmatrix.type)
+  msg("", " Number of states", UCmatrix.states)
+}
 
 ##
 ## Return the uniformization matrix.
 ##
-setMethodS3("uniformize", "UCmatrix", appendVarArgs=FALSE, function(this, qn=NULL) {
+uniformize <- function(qn=NULL) {
   ## Compute Q = I + 1/qn Q
-  msg(class=class(this)[1], "uniformize", "uniformizing Q")
-  stopifnot(this$type == 'Q')
+  msg("", "uniformize", "uniformizing Q")
+  stopifnot(UCmatrix.type == 'Q')
   if(is.null(qn)) {
-    stopifnot(!is.null(this$qii.max))
-    this$Q <- this$Q/this$qii.max
-  } else this$Q <- this$Q/qn
-  diag(this$Q) <- 1 + diag(this$Q)
-  this$type <- 'P'
-})
+    stopifnot(!is.null(UCmatrix.qii.max))
+    UCmatrix.Q <<- UCmatrix.Q/UCmatrix.qii.max
+  } else UCmatrix.Q <<- UCmatrix.Q/qn
+  diag(UCmatrix.Q) <<- 1 + diag(UCmatrix.Q)
+  UCmatrix.type <<- 'P'
+}
 
 ##
 ## Rescale the uniformization matrix.
 ##
-setMethodS3("rescale", "UCmatrix", appendVarArgs=FALSE, function(this, qn) {
+rescale <- function(qn) {
   ## Compute Q = I + 1/qn Q
-  msg(class=class(this)[1], "rescale", "rescaling Q")
-  stopifnot(this$type == 'P')
-  stopifnot(qn > this$qii.max)
-  scale <- this$qii.max/qn
-  this$Q <- this$Q * scale
-  diag(this$Q) <- (1-scale) + diag(this$Q)
-})
+  msg(class="", "rescale", "rescaling Q")
+  stopifnot(UCmatrix.type == 'P')
+  stopifnot(qn > UCmatrix.qii.max)
+  scale <- UCmatrix.qii.max/qn
+  UCmatrix.Q <<- UCmatrix.Q * scale
+  diag(UCmatrix.Q) <<- (1-scale) + diag(UCmatrix.Q)
+}
 
 ##
 ## Solve a CTMC using uniformization
 ##
-setMethodS3("limit.distribution", "UCmatrix", appendVarArgs=FALSE, function(this,
-                                                              i, absorbing) {
-  msg(class=class(this)[1], "limit.distribution", "Compute the limit dist.")
-  if(absorbing > 0) this$absorbing.prob(i, absorbing)
-  else this$stationary.prob()
-})
+limit.distribution <- function(i, absorbing) {
+  msg(class="", "limit.distribution", "Compute the limit dist.")
+  if(absorbing > 0) absorbing.prob(i, absorbing)
+  else stationary.prob()
+}
 
 #############################################################################
 ## UCmatrix private methods
@@ -158,35 +142,37 @@ setMethodS3("limit.distribution", "UCmatrix", appendVarArgs=FALSE, function(this
 ##
 ## Using QR decomposition of a Vanderemonde matrix
 ##
-setMethodS3("solve.uc.vand", "UCmatrix", appendVarArgs=FALSE, priv=TRUE, function(this, uc, lim=NULL) {
-  msg(class=class(this)[1], "solve.uc.vand", "Solve using QR decomposition of Vandermonde system")
+solve.uc.vand <- function(uc, lim=NULL) {
+  msg(class="", "solve.uc.vand", "Solve using QR decomposition of Vandermonde system")
   ## compute the eigenvalues
-  t.e <- system.time(uc$ei$init(Q=this$Q, type=this$type, ei.max=uc$ei.max,
-                                ei.max.mult=uc$ei.max.mult, use.matlab=uc$use.matlab))
+  t.e <- system.time(uc$ei$init(UCmatrix.Q, UCmatrix.type,
+                                ei.max=uc$ei.max,
+                                ei.max.mult=uc$ei.max.mult,
+                                use.matlab=uc$use.matlab))
   powers <- NULL
-#browser()
+  ##
   if(uc$unif) {
     uc$compute.qn()
     if(uc$choose.samples) powers <- uc$compute.samples()
-    if(this$type == 'P') {
+    if(UCmatrix.type == 'P') {
       ## the matrix is yet uniformized
-      if(this$qii.max != uc$qn) {
+      if(UCmatrix.qii.max != uc$qn) {
         ## rescale the uniformized matrix
-        this$rescale(uc$qn)
+        rescale(uc$qn)
         ## rescale the eigenvalues
-        uc$ei$rescale(this$qii.max, uc$qn)
+        uc$ei$rescale(UCmatrix.qii.max, uc$qn)
       }
       ei.tmp <- NULL
     } else {
       ## uniformize the matrix
-      this$uniformize(uc$qn)
+      uniformize(uc$qn)
       ## save a copy of the current eigenvalues
       ei.tmp <- clone(uc$ei)
       ## compute the eigenvalues of the uniformized matrix
       uc$ei$toggle.Q.P.map(uc$qn)
     }
     t.c <- uc$time.constant(alpha=1)
-    if(t.c > nrow(this$Q)) {
+    if(t.c > nrow(UCmatrix.Q)) {
       if(!uc$choose.samples) {
         add.w <- "  Try the option choose.samples=TRUE\n" ;
       } else {
@@ -194,22 +180,22 @@ setMethodS3("solve.uc.vand", "UCmatrix", appendVarArgs=FALSE, priv=TRUE, functio
       }
       warning(paste(sep='',
                     sprintf("Transient time in slots (%6.1e) larger than nuber of states (%6.1e)\n" ,
-                            t.c, nrow(this$Q)),
+                            t.c, nrow(UCmatrix.Q)),
                     sprintf("  The solution can be innacurate for t > %6.2e\n" ,
-                            nrow(this$Q)/uc$qn),
+                            nrow(UCmatrix.Q)/uc$qn),
                     add.w
                     ))
     }
   }
-  ## if(uc$rm.lim.eq) nr <- this$states-uc$ei$lim.mult
-  ## else nr <- this$states-uc$ei$lim.mult+1
-  if(is.null(powers)) t.b <- system.time(b <- this$compute.b(uc$i, uc$j, nr=uc$ei$number()))
-  else  t.b <- system.time(b <- this$compute.b.powers(uc$i, uc$j, powers))
+  ## if(uc$rm.lim.eq) nr <- UCmatrix.states-uc$ei$lim.mult
+  ## else nr <- UCmatrix.states-uc$ei$lim.mult+1
+  if(is.null(powers)) t.b <- system.time(b <- compute.b(uc$i, uc$j, nr=uc$ei$number()))
+  else  t.b <- system.time(b <- compute.b.powers(uc$i, uc$j, powers))
   t.s <-
     system.time(if(uc$lim) {
-      msg(class=class(this)[1], "solve.uc.vand", "Solve using the limit distribution")
+      msg(class="", "solve.uc.vand", "Solve using the limit distribution")
       if(is.null(lim)) {
-        lim <- this$limit.distribution(uc$i, uc$ei$absorbing)[uc$j]
+        lim <- limit.distribution(uc$i, uc$ei$absorbing)[uc$j]
       }
       if(uc$rm.lim.eq) {
         if(uc$ei$type == 'Q') {
@@ -220,9 +206,9 @@ setMethodS3("solve.uc.vand", "UCmatrix", appendVarArgs=FALSE, priv=TRUE, functio
       }
     })
   ## Q is not needed anymore
-  msg(class=class(this)[1], "solve.uc.vand", "removing Q")
-  this$Q <- NULL
-  call.gc(class(this)[1], "solve.uc.vand")
+  msg(class="", "solve.uc.vand", "removing Q")
+  remove(UCmatrix.Q, pos = ".GlobalEnv") # <<- NULL
+  call.gc("", "solve.uc.vand")
   t.c <- system.time(uc$solve.uc.vandermonde(b, lim, powers))
   if(uc$unif) {
     ## compute the UC of the ctmc
@@ -232,66 +218,66 @@ setMethodS3("solve.uc.vand", "UCmatrix", appendVarArgs=FALSE, priv=TRUE, functio
     else uc$ei$toggle.Q.P.map(uc$qn)
   }
   uc$time <- list(ei=t.e, lim=t.s, b=t.b, coef=t.c)
-})
+}
 
 ##
 ## Using eigenvectors
 ##
-setMethodS3("solve.uc.evec", "UCmatrix", appendVarArgs=FALSE, priv=TRUE, function(this, uc,
-                                                            use.matlab=FALSE) {
-  msg(class=class(this)[1], "solve.uc.evec", "Solve using eigenvectors")
-  t.e <- system.time(uc$ei$init(this$Q, this$type, evec=TRUE, use.matlab=use.matlab))
+solve.uc.evec <- function(uc, use.matlab=FALSE) {
+  msg(class="", "solve.uc.evec", "Solve using eigenvectors")
+  t.e <- system.time(uc$ei$init(UCmatrix.Q, UCmatrix.type,
+                                evec=TRUE, use.matlab=use.matlab))
   ## Q is not needed anymore
-  msg(class=class(this)[1], "solve.uc.evec", "removing Q")
-  this$Q <- NULL
-  call.gc(class(this)[1], 'solve.uc.evec')
+  msg(class="", "solve.uc.evec", "removing Q")
+  remove(UCmatrix.Q, pos = ".GlobalEnv") # <<- NULL
+  call.gc("", 'solve.uc.evec')
   t.c <- system.time(uc$solve.uc.eigenvectors())
   uc$time <- list(ei=t.e, coef=t.c)
-})
+}
 
 ########################################
 ## UCmatrix b matrix
 ########################################
-setMethodS3("compute.b", "UCmatrix", appendVarArgs=FALSE, priv=TRUE, function(this, i, j, nr) {
-  msg(class=class(this)[1], "compute.b", "Compute the matrix b")
+compute.b <- function(i, j, nr) {
+  msg(class="", "compute.b", "Compute the matrix b")
   n.j <- 1:length(j)
   if(length(i) == 1) {
-    r <- matrix(this$Q[i,], nr=1, nc=this$states)
+    r <- matrix(UCmatrix.Q[i,], nr=1, nc=UCmatrix.states)
     b <- matrix(nc=length(n.j), nr=nr)
     for(n in n.j) { # first row
       if(j[n] == i) { b[1,n] <- 1 }
       else          { b[1,n] <- 0 }
     }
   } else {
-    r <- i %*% this$Q
+    r <- i %*% UCmatrix.Q
     b <- matrix(nc=length(n.j), nr=nr)
     b[1,n.j] <- i[j]
   }
   b[2,n.j] <- r[1,j]
   if(nr > 2) {
     for(n in 3:nr) {
-      r <- r %*% this$Q
+      r <- r %*% UCmatrix.Q
       b[n,n.j] <- r[1,j]
     }
   }
   return(b)
-})
+}
 
 ########################################
 ## UCmatrix b matrix for the given powers
 ########################################
-setMethodS3("compute.b.powers", "UCmatrix", appendVarArgs=FALSE, priv=TRUE, function(this, i, j, powers) {
-  msg(class=class(this)[1], "compute.b.powers", "Compute the matrix b", ", max power=", max(powers))
+compute.b.powers <- function(i, j, powers) {
+  msg(class="", "compute.b.powers", "Compute the matrix b", ", max power=", max(powers))
   n.j <- 1:length(j)
   if(length(i) == 1) {
-    r <- matrix(this$Q[i,], nr=1, nc=this$states)
+    r <- matrix(UCmatrix.Q[i,], nr=1, nc=UCmatrix.states)
     b <- matrix(nc=length(n.j), nr=length(powers)+1)
     for(n in n.j) { # first row
       if(j[n] == i) { b[1,n] <- 1 }
       else          { b[1,n] <- 0 }
     }
   } else {
-    r <- i %*% this$Q
+    r <- i %*% UCmatrix.Q
     b <- matrix(nc=length(n.j), nr=length(powers)+1)
     b[1,n.j] <- i[j]
   }
@@ -299,14 +285,14 @@ setMethodS3("compute.b.powers", "UCmatrix", appendVarArgs=FALSE, priv=TRUE, func
   n <- 2
   for(pow in powers) {
     while(curr.power < pow) {
-      r <- r %*% this$Q
+      r <- r %*% UCmatrix.Q
       curr.power <- curr.power+1
     }
     b[n,n.j] <- r[1,j]
     n <- n+1
   }
   return(b)
-})
+}
 
 #######################################
 ## UCmatrix limit distribution methods
@@ -314,45 +300,41 @@ setMethodS3("compute.b.powers", "UCmatrix", appendVarArgs=FALSE, priv=TRUE, func
 #
 # Return the probabilities to be absorbed starting from state i
 #
-setMethodS3("absorbing.prob", "UCmatrix", appendVarArgs=FALSE, priv=TRUE, function(this,
-                                                             i, absorbing) {
-  msg(class=class(this)[1], "absorbing.prob", "Compute the absorbing probs.")
+absorbing.prob <- function(i, absorbing) {
+  msg(class="", "absorbing.prob", "Compute the absorbing probs.")
   stopifnot(absorbing > 0)
   ## Assume absorbing states and Q in canonical form (absorbing states have
   ## the highest indexes)
-  states <- nrow(this$Q)
-  trans <- states -  absorbing
+  UCmatrix.states <<- nrow(UCmatrix.Q)
+  trans <- UCmatrix.states -  absorbing
   if(i > trans) stop('State is not transient:', i, '\n')
   if(absorbing == 1) {
     return(c(rep(0, trans), 1))
   }
   ## Remove last equation and normalize
-  R <- as.matrix(this$Q[1:trans,(trans+1):states])
+  R <- as.matrix(UCmatrix.Q[1:trans,(trans+1):UCmatrix.states])
   abs.p <-
-    switch(this$type,
-           Q = try.solve(this$Q[1:trans,1:trans], -R),
-           P = try.solve(diag(nr=trans)-this$Q[1:trans,1:trans], R))
+    switch(UCmatrix.type,
+           Q = try.solve(UCmatrix.Q[1:trans,1:trans], -R),
+           P = try.solve(diag(nr=trans)-UCmatrix.Q[1:trans,1:trans], R))
   if(!is.null(abs.p)) return(c(rep(0, trans), abs.p[i,]))
   return(NULL)
-})
+}
 
-setMethodS3("stationary.prob", "UCmatrix", appendVarArgs=FALSE, priv=TRUE, function(this) {
+stationary.prob <- function() {
   ## Remove the first equation and normalize
-  msg(class=class(this)[1], "stationary.prob", "Compute the stationary dist.")
-  n <- nrow(this$Q)
+  msg(class="", "stationary.prob", "Compute the stationary dist.")
+  n <- nrow(UCmatrix.Q)
   stat <-
-    switch(this$type,
-           Q = try.solve(t(this$Q[2:n,2:n]), -as.matrix(this$Q[1,2:n])),
-           P = try.solve(t(this$Q[2:n,2:n]-Diagonal(n-1, 1)), -as.matrix(this$Q[1,2:n])))
+    switch(UCmatrix.type,
+           Q = try.solve(t(UCmatrix.Q[2:n,2:n]), -as.matrix(UCmatrix.Q[1,2:n])),
+           P = try.solve(t(UCmatrix.Q[2:n,2:n]-Diagonal(n-1, 1)), -as.matrix(UCmatrix.Q[1,2:n])))
   if(!is.null(stat)) {
-    ##:ess-bp-start::browser:##
-    ##:ess-bp-end:##
-    stat <- as.vector(stat)
     stat[stat < 0] <- 0
     stat <- c(1, stat)/(sum(stat)+1)
   }
   return(stat)
-})
+}
 
 #############################################################################
 ## Supporting functions

@@ -17,4 +17,4 @@ http://www.ac.upc.edu/RR/2010/53.pdf
 
 Usage: Install the files and follow the example test-markov-solver.R.
 
-More info: http://tomir.ac.upc.edu/dsg/node/536
+More info: http://tomir.ac.upc.edu/node/536

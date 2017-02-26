@@ -47,6 +47,7 @@ j <- 1:min(N+1, 9)  # target states
 ei.max.mult <- 5    # maximum multiplicity of the eigenvalues (0 for unlimited)
 
 UCmatrix.Q <- build.ctmc.m.m.1.N.matrix.sparse(N, lambda, mu)
+# NOTE: solve.uc remove the matrix UCmatrix.Q to save memory space!!
 Q <- UCmatrix.Q
 uc.s <- solve.uc(method='vand', unif=TRUE, j=j, i=i,
                         ei.max.mult=ei.max.mult)

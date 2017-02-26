@@ -24,7 +24,7 @@
 
 library(Matrix)
 
-source("oo-markov-undetermined-coefficients.R")
+source("r6-markov-undetermined-coefficients.R")
 
 build.ctmc.m.m.1.N.matrix.sparse <- function(N, lambda, mu) {
   return(bandSparse(n=N+1,
@@ -46,9 +46,9 @@ i <- 1 # initial state.
 j <- 1:min(N+1, 9)  # target states
 ei.max.mult <- 5    # maximum multiplicity of the eigenvalues (0 for unlimited)
 
-Q <- build.ctmc.m.m.1.N.matrix.sparse(N, lambda, mu)
-uc.mat <- UCmatrix(Q)
-uc.s <- uc.mat$solve.uc(method='vand', unif=TRUE, j=j, i=i,
+UCmatrix.Q <- build.ctmc.m.m.1.N.matrix.sparse(N, lambda, mu)
+Q <- UCmatrix.Q
+uc.s <- solve.uc(method='vand', unif=TRUE, j=j, i=i,
                         ei.max.mult=ei.max.mult)
 
 t <- time.log.scale(dec=c(-6,7), num=20)
@@ -98,9 +98,9 @@ i <- c(rep(1/5, 5), rep(0, N+1-5)) # initial state as a probability vector
 j <- 1:min(N+1, 9)  # target states
 ei.max.mult <- 5    # maximum multiplicity of the eigenvalues (0 for unlimited)
 
-Q <- build.ctmc.m.m.1.N.matrix.sparse(N, lambda, mu)
-uc.mat <- UCmatrix(Q)
-uc.s <- uc.mat$solve.uc(method='vand', unif=TRUE, j=j, i=i,
+UCmatrix.Q <- build.ctmc.m.m.1.N.matrix.sparse(N, lambda, mu)
+Q <- UCmatrix.Q
+uc.s <- solve.uc(method='vand', unif=TRUE, j=j, i=i,
                         ei.max.mult=ei.max.mult)
 
 t <- time.log.scale(dec=c(-6,7), num=20)
@@ -134,9 +134,9 @@ i <- 1 # initial state. Can be also a probability vector, e.g. i <- rep(1/(N+1),
 j <- 1:min(N+1, 9)  # target states
 ei.max.mult <- 5    # maximum multiplicity of the eigenvalues (0 for unlimited)
 
-Q <- build.ctmc.m.m.1.N.matrix.sparse(N, lambda, mu)
-uc.mat <- UCmatrix(Q)
-uc.s <- uc.mat$solve.uc(method='vand', unif=TRUE, j=j, i=i,
+UCmatrix.Q <- build.ctmc.m.m.1.N.matrix.sparse(N, lambda, mu)
+Q <- UCmatrix.Q
+uc.s <- solve.uc(method='vand', unif=TRUE, j=j, i=i,
                         ei.max.mult=ei.max.mult)
 
 t <- time.log.scale(dec=c(-6,7), num=20)
@@ -161,8 +161,7 @@ message("error: ", sum((p.uvand-p.expm)^2))
 ## The error in stationary regime can be reduced adding the option
 ## use.lim=TRUE. In this case, the script solves the stationary
 ## solution, and it is added to the system that computes the UCs.
-uc.mat <- UCmatrix(Q)
-uc.s <- uc.mat$solve.uc(method='vand', unif=TRUE, j=j, i=i,
+uc.s <- solve.uc(method='vand', unif=TRUE, j=j, i=i,
                         ei.max.mult=ei.max.mult, use.lim=TRUE)
 
 t <- time.log.scale(dec=c(-6,7), num=20)
@@ -195,10 +194,10 @@ i <- 1 # initial state
 j <- 1:min(N+1, 9)  # target states
 ei.max.mult <- 5    # maximum multiplicity of the eigenvalues (0 for unlimited)
 
-Q <- build.ctmc.m.m.1.N.matrix.sparse(N, lambda, mu)
-uc.mat <- UCmatrix(Q)
+UCmatrix.Q <- build.ctmc.m.m.1.N.matrix.sparse(N, lambda, mu)
+Q <- UCmatrix.Q
 
-uc.s <- uc.mat$solve.uc(method='vand', unif=TRUE, j=j, i=i,
+uc.s <- solve.uc(method='vand', unif=TRUE, j=j, i=i,
                         ei.max.mult=ei.max.mult)
 
 t <- time.log.scale(dec=c(-6,7), num=20)
@@ -222,8 +221,8 @@ message("error: ", sum((p.uvand-p.expm)^2))
 
 ## Option choose.samples=TRUE may help the method to converge. See section 7 in the report
 ## http://www.ac.upc.edu/RR/2010/53.pdf
-uc.mat <- UCmatrix(Q)
-uc.s <- uc.mat$solve.uc(method='vand', unif=TRUE, j=j, i=i,
+UCmatrix.Q <- Q
+uc.s <- solve.uc(method='vand', unif=TRUE, j=j, i=i,
                         ei.max.mult=ei.max.mult, choose.samples=TRUE)
 
 t <- time.log.scale(dec=c(-6,7), num=20)

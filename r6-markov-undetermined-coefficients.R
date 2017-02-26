@@ -15,25 +15,25 @@
 ##
 ## save an object: save(obj, fname)
 ## load an object: obj <- Object$load(fname)
-library(R.oo)
+library(R6)
 library(Matrix)
-library(R.matlab)
-source("oo-eigen.R")
-source("oo-uc.R")
+source("r6-eigen.R")
+source("r6-uc.R")
 
 ##########################################################################################
 debug <- TRUE
-matlab <- NULL
 UCmatrix.Q <- Matrix()
+Vmatrix.Q <- NULL
+Bmatrix.Q <- NULL
 UCmatrix.states <- integer()
 UCmatrix.type <- character()
 UCmatrix.qii.max <- numeric()
 
 solve.uc <- function(Q=NULL, qii.max=NULL, j=NULL, i=1, method='vand',
-                     unif=FALSE, qn=NULL, choose.samples=FALSE,
-                     lim.dist=NULL, use.lim=FALSE, rm.lim.eq=FALSE,
+                     unif=FALSE, qn=NULL, choose.samples=FALSE, alpha=10.0,
+                     lim.dist=NULL, use.lim=FALSE,
                      states.names=NULL, ei.max=0, ei.max.mult=0,
-                     use.matlab=FALSE) {
+                     use.eigen.from.file=NULL, ei=NULL) {
   if(!is.null(Q)) {
     UCmatrix.Q <<- Q
   }
@@ -43,16 +43,6 @@ solve.uc <- function(Q=NULL, qii.max=NULL, j=NULL, i=1, method='vand',
   UCmatrix.type <<- guess.Q.type(UCmatrix.Q)
   msg(class="", "solve.uc", "solving for ", UCmatrix.type)
   #
-  if(use.matlab) {
-    msg(class="", "solve.uc", "using matlab")
-    ## Start the matlab server on the same machine
-    Matlab$startServer()
-    ## Create a Matlab client
-    matlab <<- Matlab(host="localhost")
-    ## Connect to the Matlab server
-    if (!open(matlab))
-      throw("Matlab server is not running: waited 30 seconds.")
-  }
   j <- choose.j(j, nrow(UCmatrix.Q))
   if(!is.null(lim.dist)) use.lim <- TRUE
   if(unif) {
@@ -63,10 +53,11 @@ solve.uc <- function(Q=NULL, qii.max=NULL, j=NULL, i=1, method='vand',
       if(is.null(UCmatrix.qii.max)) UCmatrix.qii.max <<- abs(min(diag(UCmatrix.Q)))
     }
   }
-  uc <- UC(type=UCmatrix.type,method=method, states=UCmatrix.states, j=j, i=i,
-           states.names=states.names, unif=unif, qii.max=UCmatrix.qii.max, qn=qn, 
-           choose.samples=choose.samples, lim=use.lim, rm.lim.eq=rm.lim.eq,
-           ei.max=ei.max, ei.max.mult=ei.max.mult, use.matlab=use.matlab)
+  uc <- UC$new(type=UCmatrix.type,method=method, states=UCmatrix.states, j=j, i=i,
+               states.names=states.names, unif=unif, qii.max=UCmatrix.qii.max, qn=qn, 
+               choose.samples=choose.samples, alpha=alpha, lim=use.lim,
+               ei.max=ei.max, ei.max.mult=ei.max.mult,
+               use.eigen.from.file=use.eigen.from.file, ei=ei)
   t.tot <-
     switch(method,
            vand =  system.time(solve.uc.vand(uc, lim=lim.dist)),
@@ -74,17 +65,13 @@ solve.uc <- function(Q=NULL, qii.max=NULL, j=NULL, i=1, method='vand',
            stop('Unknown method (must be "vand" or "evec")')
            )
   ##
-  uc$time <- c(uc$time, list(t.tot=t.tot))
-  if(!empty(uc$coef) && isTRUE(all(Re(uc$coef) == 0))) uc$coef <- NULL # the system failed
+  uc$add.time(list(t.tot=t.tot))
+  if(!empty(uc$coef) && isTRUE(all(Re(uc$coef) == 0))) uc$reset.coef() # the system failed
   ##
   if(debug) {
     msg(class="", "solve.uc", 'done')
     Q.print()
     uc$print()
-  }
-  if(use.matlab) {
-    ## close the Matlab client and shutdown the server
-    close(matlab)
   }
   return(uc)
 }
@@ -133,26 +120,128 @@ limit.distribution <- function(i, absorbing) {
   else stationary.prob()
 }
 
-#############################################################################
-## UCmatrix private methods
-#############################################################################
 ########################################
 ## UCmatrix solving methods
 ########################################
 ##
 ## Using QR decomposition of a Vanderemonde matrix
 ##
+confl.vand.mat <- function(uc, nr, powers) {
+    msg(class="", "confl.vand.mat", 'Build the Vandermonde matrix')
+    nc <- length(uc$ei$one)
+    if(length(uc$ei$confl) > 0) {
+        nc <- nc + sum(uc$ei$mult)
+    }
+    if(is.null(powers)) vand.matrix(uc$ei$one, nr, nc)
+    else vand.matrix.powers(uc$ei$one, powers, nc)
+    ##
+    if(length(uc$ei$confl) > 0) {
+        multi <- length(uc$ei$one)
+        if(is.null(powers)) {
+            for(i in 1:length(uc$ei$confl)) {
+                Vmatrix.Q[,(multi+1):(multi+uc$ei$mult[i])] <<-
+                    switch(uc$ei$type,
+                           Q = vand.ctmc.confl.block(uc$ei$confl[i], uc$ei$mult[i], nr),
+                           P = vand.dtmc.confl.block(uc$ei$confl[i], uc$ei$mult[i], nr))
+                multi <- multi+uc$ei$mult[i]
+            }
+        } else {
+            for(i in 1:length(uc$ei$confl)) {
+                Vmatrix.Q[,(multi+1):(multi+uc$ei$mult[i])] <<-
+                    switch(uc$ei$type,
+                           Q = vand.ctmc.confl.block.powers(uc$ei$confl[i], powers, uc$ei$mult[i]),
+                           P = vand.dtmc.confl.block.powers(uc$ei$confl[i], powers, uc$ei$mult[i]))
+                multi <- multi+uc$ei$mult[i]
+            }
+        }
+    }
+}
+
+##
+## Coefficients are computed solving a Vandermonde system
+##
+compute.qn <- function(uc) {
+  msg(class="", "compute.qn",'Computing the uniformization parameter')
+  if(is.null(uc$qn)) {
+    ## most negative eigenvalue
+    abs.min.ei <- abs(min(Re(uc$ei$confl), Re(uc$ei$one)))
+    ## second largest eigenvalue in modulus
+    ei2 <- abs(uc$ei$second.largest.re()$value)
+    N <- uc$ei$number()
+    if(uc$ei$type == 'P') {
+      min.qn <- (uc$qii.max - uc$qii.max * ei2)/(1-.Machine$double.eps^(1/N))
+    } else {
+      min.qn <- ei2/(1-.Machine$double.eps^(0.8/as.numeric(N)))
+      ## min.qn <- ei2/(1-.Machine$double.eps^(0.5/as.numeric(N)))
+    }
+    uc$set.qn(max(uc$qii.max, abs.min.ei, min.qn))
+    if(uc$qn > ei2*N) {
+      uc$set.qn(max(uc$qii.max, ei2*N))
+    }
+  } else msg(class="", "compute.qn", 'qn already initialized')
+}
+
+##
+## Coefficients are computed using the eigenvectors of Q.
+##
+solve.uc.eigenvectors <- function(uc) {
+    msg(class="", "solve.uc.eigenvectors",'Solving the eigenvectors')
+    if(length(uc$i) == 1) {
+        x0 <- rep(0,len=nrow(uc$ei$evec)) ; x0[uc$i] <- 1
+    } else {
+        x0 <- uc$i
+    }
+    s <- try.solve.kappa(uc$ei$evec, x0)
+    uc$set.kappa(s$kappa)
+    uc$set.Vmatrix.characteristics(dim=dim(uc$ei$evec),
+                                   zeros=length(which(uc$ei$evec == 0)),
+                                   bytes=object.size(uc$ei$evec))
+    if(!empty(s$x)) {
+        uc$set.coef(sapply(uc$j, function(n) uc$ei$evec[n,] * s$x),
+                    colnames(uc$coef) <- uc$get.states.names())
+    }
+    msg(class="", 'solve.uc.eigenvectors', 'Removing eigenvectors')
+    uc$ei$remove.evec() # eigenvectors are not needed anymore
+    ## correct the eigenvalues if computed with an uniformized matrix
+    if(uc$unif && (uc$ei$type == 'P')) uc$ei$toggle.Q.P.map(uc$qii.max)
+}
+
+##
+## Coefficients are computed solving a Vandermonde system
+##
+solve.uc.vandermonde <- function(uc, lim=NULL, powers=NULL) {
+  confl.vand.mat(uc, nrow(Bmatrix.Q), powers)
+  if(!is.null(lim)) {
+      msg(class="", "solve.uc.vandermonde",'add the limit distribution')
+      Vmatrix.Q <<- rbind(Vmatrix.Q, c(1, rep(0, ncol(Vmatrix.Q)-1)))
+      Bmatrix.Q <<- rbind(Bmatrix.Q, lim)
+  }
+  msg(class="", "solve.uc.vandermonde",'Solve the Vandermonde system')
+  s <- try.solve.kappa(Vmatrix.Q, Bmatrix.Q)
+  if(!empty(s$x)) {
+      uc$set.coef(s$x, uc$get.states.names())
+  }
+  uc$set.kappa(s$kappa)
+  uc$set.Vmatrix.characteristics(dim(Vmatrix.Q),
+                                 length(which(Vmatrix.Q == 0)),
+                                 object.size(Vmatrix.Q))
+}
+
 solve.uc.vand <- function(uc, lim=NULL) {
   msg(class="", "solve.uc.vand", "Solve using QR decomposition of Vandermonde system")
   ## compute the eigenvalues
-  t.e <- system.time(uc$ei$init(UCmatrix.Q, UCmatrix.type,
-                                ei.max=uc$ei.max,
-                                ei.max.mult=uc$ei.max.mult,
-                                use.matlab=uc$use.matlab))
+  if(!is.null(uc$use.eigen.from.file) && !is.null(uc$ei$type)) {
+      msg(class="", "solve.uc.vand", "Using eigenvalues from file", uc$use.eigen.from.file)
+      t.e <- 0.0
+  } else {
+      t.e <- system.time(uc$compute.eigenvalues(type=UCmatrix.type,
+                                                ei.max=uc$ei.max,
+                                                ei.max.mult=uc$ei.max.mult))
+  }
   powers <- NULL
   ##
   if(uc$unif) {
-    uc$compute.qn()
+    compute.qn(uc)
     if(uc$choose.samples) powers <- uc$compute.samples()
     if(UCmatrix.type == 'P') {
       ## the matrix is yet uniformized
@@ -167,11 +256,12 @@ solve.uc.vand <- function(uc, lim=NULL) {
       ## uniformize the matrix
       uniformize(uc$qn)
       ## save a copy of the current eigenvalues
-      ei.tmp <- clone(uc$ei)
+      ei.tmp <- Eigen$new()
+      ei.tmp$copy(uc$ei)
       ## compute the eigenvalues of the uniformized matrix
       uc$ei$toggle.Q.P.map(uc$qn)
     }
-    t.c <- uc$time.constant(alpha=1)
+    t.c <- uc$time.constant()
     if(t.c > nrow(UCmatrix.Q)) {
       if(!uc$choose.samples) {
         add.w <- "  Try the option choose.samples=TRUE\n" ;
@@ -187,52 +277,45 @@ solve.uc.vand <- function(uc, lim=NULL) {
                     ))
     }
   }
-  ## if(uc$rm.lim.eq) nr <- UCmatrix.states-uc$ei$lim.mult
-  ## else nr <- UCmatrix.states-uc$ei$lim.mult+1
-  if(is.null(powers)) t.b <- system.time(b <- compute.b(uc$i, uc$j, nr=uc$ei$number()))
-  else  t.b <- system.time(b <- compute.b.powers(uc$i, uc$j, powers))
+  if(is.null(powers)) t.b <- system.time(compute.b(uc$i, uc$j, nr=uc$ei$number()))
+  else  t.b <- system.time(compute.b.powers(uc$i, uc$j, powers))
   t.s <-
     system.time(if(uc$lim) {
       msg(class="", "solve.uc.vand", "Solve using the limit distribution")
       if(is.null(lim)) {
         lim <- limit.distribution(uc$i, uc$ei$absorbing)[uc$j]
       }
-      if(uc$rm.lim.eq) {
-        if(uc$ei$type == 'Q') {
-          b[1,] <- b[1,] - lim
-        } else {
-          b <- b - matrix(rep(lim, nrow(b)), nr=nrow(b), byr=TRUE)
-        }
-      }
     })
   ## Q is not needed anymore
-  msg(class="", "solve.uc.vand", "removing Q")
+  # msg(class="", "solve.uc.vand", "removing Q")
   remove(UCmatrix.Q, pos = ".GlobalEnv") # <<- NULL
   call.gc("", "solve.uc.vand")
-  t.c <- system.time(uc$solve.uc.vandermonde(b, lim, powers))
+  t.c <- system.time(solve.uc.vandermonde(uc, lim, powers))
+  remove(Bmatrix.Q, pos = ".GlobalEnv") # <<- NULL
+  remove(Vmatrix.Q, pos = ".GlobalEnv") # <<- NULL
+  call.gc("", "solve.uc.vand")
   if(uc$unif) {
     ## compute the UC of the ctmc
     uc$correct.confl.coef()
     ## set the eigenvalues of the ctmc
-    if(!is.null(ei.tmp)) uc$ei <- ei.tmp
+    if(!is.null(ei.tmp)) uc$ei$copy(ei.tmp)
     else uc$ei$toggle.Q.P.map(uc$qn)
   }
-  uc$time <- list(ei=t.e, lim=t.s, b=t.b, coef=t.c)
+  uc$init.time(list(ei=t.e, lim=t.s, b=t.b, coef=t.c))
 }
 
 ##
 ## Using eigenvectors
 ##
-solve.uc.evec <- function(uc, use.matlab=FALSE) {
+solve.uc.evec <- function(uc) {
   msg(class="", "solve.uc.evec", "Solve using eigenvectors")
-  t.e <- system.time(uc$ei$init(UCmatrix.Q, UCmatrix.type,
-                                evec=TRUE, use.matlab=use.matlab))
+  t.e <- system.time(uc$compute.eigenvalues(type=UCmatrix.type, evec=TRUE))
   ## Q is not needed anymore
   msg(class="", "solve.uc.evec", "removing Q")
   remove(UCmatrix.Q, pos = ".GlobalEnv") # <<- NULL
   call.gc("", 'solve.uc.evec')
   t.c <- system.time(uc$solve.uc.eigenvectors())
-  uc$time <- list(ei=t.e, coef=t.c)
+  uc$init.time(list(ei=t.e, coef=t.c))
 }
 
 ########################################
@@ -243,24 +326,23 @@ compute.b <- function(i, j, nr) {
   n.j <- 1:length(j)
   if(length(i) == 1) {
     r <- matrix(UCmatrix.Q[i,], nr=1, nc=UCmatrix.states)
-    b <- matrix(nc=length(n.j), nr=nr)
+    Bmatrix.Q <<- matrix(nc=length(n.j), nr=nr)
     for(n in n.j) { # first row
-      if(j[n] == i) { b[1,n] <- 1 }
-      else          { b[1,n] <- 0 }
+      if(j[n] == i) { Bmatrix.Q[1,n] <<- 1 }
+      else          { Bmatrix.Q[1,n] <<- 0 }
     }
   } else {
     r <- i %*% UCmatrix.Q
-    b <- matrix(nc=length(n.j), nr=nr)
-    b[1,n.j] <- i[j]
+    Bmatrix.Q <<- matrix(nc=length(n.j), nr=nr)
+    Bmatrix.Q[1,n.j] <<- i[j]
   }
-  b[2,n.j] <- r[1,j]
+  Bmatrix.Q[2,n.j] <<- r[1,j]
   if(nr > 2) {
     for(n in 3:nr) {
       r <- r %*% UCmatrix.Q
-      b[n,n.j] <- r[1,j]
+      Bmatrix.Q[n,n.j] <<- r[1,j]
     }
   }
-  return(b)
 }
 
 ########################################
@@ -271,15 +353,15 @@ compute.b.powers <- function(i, j, powers) {
   n.j <- 1:length(j)
   if(length(i) == 1) {
     r <- matrix(UCmatrix.Q[i,], nr=1, nc=UCmatrix.states)
-    b <- matrix(nc=length(n.j), nr=length(powers)+1)
+    Bmatrix.Q <<- matrix(nc=length(n.j), nr=length(powers)+1)
     for(n in n.j) { # first row
-      if(j[n] == i) { b[1,n] <- 1 }
-      else          { b[1,n] <- 0 }
+      if(j[n] == i) { Bmatrix.Q[1,n] <<- 1 }
+      else          { Bmatrix.Q[1,n] <<- 0 }
     }
   } else {
     r <- i %*% UCmatrix.Q
-    b <- matrix(nc=length(n.j), nr=length(powers)+1)
-    b[1,n.j] <- i[j]
+    Bmatrix.Q <<- matrix(nc=length(n.j), nr=length(powers)+1)
+    Bmatrix.Q[1,n.j] <<- i[j]
   }
   curr.power <- 1
   n <- 2
@@ -288,10 +370,9 @@ compute.b.powers <- function(i, j, powers) {
       r <- r %*% UCmatrix.Q
       curr.power <- curr.power+1
     }
-    b[n,n.j] <- r[1,j]
+    Bmatrix.Q[n,n.j] <<- r[1,j]
     n <- n+1
   }
-  return(b)
 }
 
 #######################################
@@ -331,7 +412,7 @@ stationary.prob <- function() {
            P = try.solve(t(UCmatrix.Q[2:n,2:n]-Diagonal(n-1, 1)), -as.matrix(UCmatrix.Q[1,2:n])))
   if(!is.null(stat)) {
     stat[stat < 0] <- 0
-    stat <- c(1, stat)/(sum(stat)+1)
+    stat <- rbind(1, stat)/(sum(stat)+1)
   }
   return(stat)
 }
@@ -418,27 +499,46 @@ try.solve.kappa <- function(A, b) {
 vand.matrix <- function(lambda, nr, nc) {
   ## nc <- length(lambda)
   ## V <- Matrix(data=rep(1, nc), byrow=FALSE, nr=nr, nc=nc, forceCheck=TRUE)
-  V <- matrix(nr=nr, nc=nc)
+  Vmatrix.Q <<- matrix(nr=nr, nc=nc)
   if(nc > 0) {
-    V[1,] <- rep(1, nc)
+    Vmatrix.Q[1,] <<- rep(1, nc)
     for(i in 2:nr) {
-      V[i,1:length(lambda)] <- V[i-1,1:length(lambda)] * lambda
+      Vmatrix.Q[i,1:length(lambda)] <<- Vmatrix.Q[i-1,1:length(lambda)] * lambda
     }
   }
-  return(V)
 }
 
 vand.matrix.powers <- function(lambda, powers, nc) {
   ## powers is a vector with the powers>0 to evaluate
-  stopifnot(length(powers) > 1)
-  V <- matrix(nr=length(powers)+1, nc=nc)
-  V[1,1:length(lambda)] <- rep(1, length(lambda))
+  stopifnot(length(powers) > 0)
+  Vmatrix.Q <<- matrix(nr=length(powers)+1, nc=nc)
+  Vmatrix.Q[1,1:length(lambda)] <<- rep(1, length(lambda))
   ## V <- Matrix(rep(1, length(lambda)), byrow=TRUE, nr=length(powers)+1, nc=length(lambda))
   for(n in 1:length(powers))
-    V[n+1,1:length(lambda)] <- lambda^powers[n]
-  return(V)
+    Vmatrix.Q[n+1,1:length(lambda)] <<- lambda^powers[n]
 }
 
+##
+## Build a dtmc confluent Vandermonde block.
+##
+vand.dtmc.confl.block.powers <- function(lambda, powers, m) {
+    ## powers is a vector with the powers>0 to evaluate
+    nr <- length(powers)+1
+    stopifnot(nr > 1)
+    if(lambda == 0) return(diag(1, nr=nr, nc=m))
+    ## A <- Matrix(rep(lambda, nr-1)^c(1:(nr-1)), byrow=FALSE, nr=nr-1, nc=m)
+    A <- matrix(nr=nr, nc=m)
+    ## First row
+    A[1,] <- c(1, rep(0, m-1))
+    for(n in 1:(nr-1)) {
+        A[n+1,] <- rep(lambda, len=m)^powers[n]*powers[n]^(0:(m-1))
+    }
+    return(A)
+}
+
+vand.ctmc.confl.block.powers <- function(lambda, powers, m) {
+    stop("vand.dtmc.confl.block.powers: not yet implemented")
+}
 ##
 ## Build a ctmc confluent Vandermonde block.
 ##
